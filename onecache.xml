@@ -1,0 +1,27 @@
+﻿<onecache port="8221" thread_num="12" hash_value_max="80" daemonize="0" guard ="0">
+  <vip if_alias_name="em1:0" vip_address="172.31.12.100" enable="0"></vip>
+  <top_key enable="0"></top_key>
+  <group_option backend_retry_interval="3" backend_retry_limit="100" auto_eject_group="1" group_retry_time="5" eject_after_restore="1">
+  </group_option>
+  <group name="group1" hash_min="0" hash_max="19" policy="master_only">
+     <host host_name="host1" ip="172.31.12.11" port="6379" master="1" connection_num="200"></host>
+  </group>
+  <group name="group2" hash_min="20" hash_max="39" policy="master_only">
+     <host host_name="host2" ip="172.31.12.11" port="6380" master="1" connection_num="200"></host>
+  </group>
+  <group name="group3" hash_min="40" hash_max="59" policy="master_only">
+     <host host_name="host3" ip="172.31.12.11" port="6381" master="1" connection_num="200"></host>
+  </group>
+  <group name="group4" hash_min="60" hash_max="79" policy="master_only">
+     <host host_name="host4" ip="172.31.12.11" port="6382" master="1" connection_num="200"></host>
+  </group>
+
+  <!--<hash_mapping>
+        <hash value="0" group_name="group4"></hash>
+        <hash value="1" group_name="group4"></hash>
+      </hash_mapping>
+      <key_mapping>
+        <key key_name="abc" group_name="group1"></key>
+      </key_mapping>
+  -->
+</onecache>
