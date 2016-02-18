@@ -13,6 +13,10 @@ Key features of OneCache including :
   4, Unix socket connection enabled.
   
   5, Real time performance statistics, including top keys statistics. 
+  
+  6, Daemon process protect you from proxy instance failure.
+  
+  7, Vitrual IP based HA feature protect you from proxy host failure.
 
 By the way, we have comercial database proxy for MySQL/PostgreSQL database, which can be a good load balancer for MySQL/PostgreSQL groups, or the SQL sharding routers transparently to you applications, or the SQL fireware to prevent your application from SQL injection hurt. For more information, please visit http://www.mysqlsoft.com
 
