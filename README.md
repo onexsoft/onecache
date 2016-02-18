@@ -22,4 +22,4 @@ Key features of OneCache including :
 
 By the way, we have comercial database proxy for MySQL/PostgreSQL database, which can be a good load balancer for MySQL/PostgreSQL groups, or the SQL sharding routers transparently to you applications, or the SQL fireware to prevent your application from SQL injection hurt. For more information, please visit http://www.mysqlsoft.com
 
-For any question, please contact flou(#)onexsoft.com
+For any question, please contact by email flou(#)onexsoft.com, or chat by QQ 37223884
