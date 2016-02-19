@@ -605,7 +605,7 @@ bool CRedisProxyCfgChecker::isValid(CRedisProxyCfg* pCfg, const char*& errMsg)
             empty = true;
         }
         if (!empty) {
-            if (0 != strcasecmp(group->groupPolicy(), POLICY_READ_BALANCE) ||
+            if (0 != strcasecmp(group->groupPolicy(), POLICY_READ_BALANCE) &&
                 0 != strcasecmp(group->groupPolicy(), POLICY_MASTER_ONLY))
             {
                 errMsg = "group's policy is wrong, it should be  read_balance or master_only";
