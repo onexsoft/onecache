@@ -65,14 +65,16 @@ public:
     int get_policy()const;
     int get_priority()const;
     int get_connectionNum()const;
+    const string passWord()const;
 
     void set_ip(string& s);
     void set_hostName(string& s);
-    void set_port(int p)  ;
+    void set_port(int p);
     void set_master(bool m);
     void set_policy(int p);
     void set_priority(int p);
     void set_connectionNum(int p);
+    void set_passWord(const char* p);
 private:
     string ip;
     string host_name;
@@ -81,6 +83,7 @@ private:
     int priority;
     int policy;
     int connection_num;
+    char password[512];
 };
 typedef std::vector<CHostInfo> HostInfoList;
 
@@ -128,6 +131,7 @@ public:
     const char* groupPolicy() const { return m_groupPolicy; }
     int hashMin()const { return m_hashMin; }
     int hashMax()const { return m_hashMax; }
+    unsigned int weight()const { return m_weight;}
     const HostInfoList& hosts() const { return m_hosts; }
     void setGroupPolicy(const char* p) {
         strcpy(m_groupPolicy, p);
@@ -138,6 +142,7 @@ private:
     char          m_groupPolicy[128];
     int           m_hashMin;
     int           m_hashMax;
+    unsigned int  m_weight;
     HostInfoList  m_hosts;
     friend class CRedisProxyCfg;
 };
@@ -182,7 +187,12 @@ public:
     int threadNum()const {return m_threadNum;}
     int port() const {return m_port;}
     const char* logFile(){ return m_logFile; }
+    const char* pidFile() const{ return m_pidFile; }
+    const string password()const { return m_password;}
+    const string hashFunctin()const { return m_hashFunction;}
+    bool isTwemproxyMode()const {return m_isTwemproxyMode;}
     bool daemonize() { return m_daemonize;}
+    bool debug() { return m_debug;}
     bool guard() { return m_guard;}
     bool topKeyEnable() { return m_topKeyEnable;}
 
@@ -200,14 +210,20 @@ private:
     int              m_threadNum;
     int              m_port;
     char             m_logFile[512];
+    char             m_pidFile[512];
+    string           m_password;
+    string           m_hashFunction;
     bool             m_daemonize;
+    bool             m_debug;
     bool             m_guard;
     bool             m_topKeyEnable;
+    bool             m_isTwemproxyMode;
     GroupOption      m_groupOption;
 private:
     void set_groupName(CGroupInfo& group, const char* name);
     void set_hashMin(CGroupInfo& group, int num);
     void set_hashMax(CGroupInfo& group, int num);
+    void set_weight(CGroupInfo& group, unsigned int weight);
     void addHost(CGroupInfo& group, CHostInfo& h);
 
     void set_groupAttribute(TiXmlAttribute* groupAttr, CGroupInfo& group);

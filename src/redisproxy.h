@@ -21,9 +21,11 @@
 #define REDISPROXY_H
 
 //Application version
-#define APP_VERSION "3.0"
+#define APP_VERSION "3.3-160421"
 #define APP_NAME "OneCache"
 #define APP_EXIT_KEY 10
+
+#include <string>
 
 #include "util/tcpserver.h"
 #include "util/locker.h"
@@ -41,11 +43,9 @@ class ClientPacket : public Context
 public:
     enum State {
         Unknown = 0,
-        ProtoError = 1,
         ProtoNotSupport = 2,
         WrongNumberOfArguments = 3,
-        RequestError = 4,
-        RequestFinished = 5
+        RequestFinished = 4
     };
 
     ClientPacket(void);
@@ -53,10 +53,10 @@ public:
 
     void setFinishedState(State state);
     RedisProxy* proxy(void) const { return (RedisProxy*)server; }
-    RedisProto::ParseState parseRecvBuffer(void);
-    RedisProto::ParseState parseSendBuffer(void);
-    bool isRecvParseEnd(void) const
-    { return (recvBufferOffset == recvBuff.size()); }
+    RedisProto::ParseState continueToParseRecvBuffer(void);
+    RedisProto::ParseState continueToParseSendBuffer(void);
+    bool isContinueToParseRecvBuffer(void) const
+    { return (recvBufferParsedOffset == recvBuff.size()); }
 
     static void defaultFinishedHandler(ClientPacket *packet, void*);
 
@@ -64,13 +64,14 @@ public:
     void* finished_arg;                             //Finished function arg
     void (*finished_func)(ClientPacket*, void*);    //Finished notify function
     int commandType;                                //Current command type
-    int recvBufferOffset;                           //Current request buffer offset
-    int sendBufferOffset;                           //Current reply buffer offset
+    int recvBufferParsedOffset;                     //Current request buffer offset
+    int sendBufferParsedOffset;                     //Current reply buffer offset
     RedisProtoParseResult recvParseResult;          //Request parse result
     RedisProtoParseResult sendParseResult;          //Reply parse result
     int sendToRedisBytes;                           //Send to redis bytes
     RedisServant* requestServant;                   //Object of request
     RedisConnection* redisSocket;                   //Redis socket
+    bool auth;
 };
 
 class Monitor
@@ -85,16 +86,15 @@ public:
     virtual void replyClientFinished(ClientPacket*) {}
 };
 
+
+struct Slot {
+    RedisServantGroup* group;
+    unsigned int value;
+};
+
 class RedisProxy : public TcpServer
 {
 public:
-    enum {
-        DefaultPort = 8221,
-
-        MaxHashValue = 1024,
-        DefaultMaxHashValue = 128,
-    };
-
     RedisProxy(void);
     ~RedisProxy(void);
 
@@ -105,6 +105,8 @@ public:
     EventLoopThreadPool* eventLoopThreadPool(void)
     { return m_eventLoopThreadPool; }
 
+    void setTwemproxyModeEnabled(bool b) { m_twemproxyMode = b; }
+    bool twemproxyEnabled(void) const { return m_twemproxyMode; }
     bool vipEnabled(void) const { return m_vipEnabled; }
     const char* vipName(void) const { return m_vipName; }
     const char* vipAddress(void) const { return m_vipAddress; }
@@ -119,17 +121,21 @@ public:
     void setMonitor(Monitor* monitor) { m_monitor = monitor; }
     Monitor* monitor(void) const { return m_monitor; }
 
+    void setPassword(const std::string& pwd) { m_pwd = pwd; }
+    const std::string password(void) const { return m_pwd; }
+
     bool run(const HostAddress &addr);
     void stop(void);
 
     void addRedisGroup(RedisServantGroup* group);
-    bool setGroupMappingValue(int hashValue, RedisServantGroup* group);
+    bool setSlot(int n, RedisServantGroup* group);
     void setHashFunction(HashFunc func) { m_hashFunc = func; }
-    void setMaxHashValue(int value) { m_maxHashValue = value; }
+    void setSlotCount(int n);
 
     HashFunc hashFunction(void) const { return m_hashFunc; }
-    int maxHashValue(void) const { return m_maxHashValue; }
-    RedisServantGroup* hashForGroup(int hashValue) const;
+    Slot* slotData(void) { return m_slots; }
+    int slotCount(void) const { return m_slotCount; }
+    RedisServantGroup* groupBySlot(int n) const;
 
     int groupCount(void) const { return m_groups.size(); }
     RedisServantGroup* group(int index) const { return m_groups.at(index); }
@@ -155,10 +161,11 @@ private:
     static void vipHandler(socket_t, short, void*);
 
 private:
+    bool m_twemproxyMode;
     Monitor* m_monitor;
     HashFunc m_hashFunc;
-    int m_maxHashValue;
-    RedisServantGroup* m_hashMapping[MaxHashValue];
+    int m_slotCount;
+    Slot* m_slots;
     Vector<RedisServantGroup*> m_groups;
     TcpSocket m_vipSocket;
     char m_vipName[256];
@@ -173,6 +180,7 @@ private:
     EventLoopThreadPool* m_eventLoopThreadPool;
     Mutex m_groupMutex;
     ProxyManager m_proxyManager;
+    std::string m_pwd;
 
 private:
     RedisProxy(const RedisProxy&);

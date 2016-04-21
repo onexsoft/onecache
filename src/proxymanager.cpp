@@ -54,13 +54,13 @@ void ProxyManager::setGroupTTL(RedisServantGroup* group, int seconds, bool resto
 
     //Update group old hash values
     info->oldHashValues.clear();
-    for (int i = 0; i < m_proxy->maxHashValue(); ++i) {
-        if (m_proxy->hashForGroup(i) == group) {
+    for (int i = 0; i < m_proxy->slotCount(); ++i) {
+        if (m_proxy->groupBySlot(i) == group) {
             info->oldHashValues.push_back(i);
         }
     }
 
-    Logger::log(Logger::Message, "set group '%s' TTL=%d second(s)", group->groupName(), seconds);
+    LOG(Logger::Message, "Remove the group '%s' after %d seconds", group->groupName(), seconds);
     info->ev.setTimer(m_proxy->eventLoop(), onSetGroupTTL, info);
     info->ev.active(seconds * 1000);
     info->can_ttl = false;
@@ -70,19 +70,19 @@ void ProxyManager::removeGroup(RedisServantGroup* group)
 {
     std::vector<int> groupOldHashValue;
     std::set<RedisServantGroup*> otherGroups;
-    int maxHashValue = m_proxy->maxHashValue();
+    int maxHashValue = m_proxy->slotCount();
     for (int i = 0; i < maxHashValue; ++i) {
-        RedisServantGroup* mp = m_proxy->hashForGroup(i);
+        RedisServantGroup* mp = m_proxy->groupBySlot(i);
         if (mp == group) {
             groupOldHashValue.push_back(i);
-            m_proxy->setGroupMappingValue(i, NULL);
+            m_proxy->setSlot(i, NULL);
         } else {
             otherGroups.insert(mp);
         }
     }
 
     if (!groupOldHashValue.empty()) {
-        Logger::log(Logger::Message, "Group '%s' removed", group->groupName());
+        LOG(Logger::Message, "Group '%s' removed", group->groupName());
     }
 
     if (otherGroups.empty() || groupOldHashValue.empty()) {
@@ -99,17 +99,17 @@ void ProxyManager::removeGroup(RedisServantGroup* group)
     for (int i = 0; itHash != groupOldHashValue.cend(); ++itHash, ++i) {
         int hashval = *itHash;
         RedisServantGroup* group = vec[i % vec.size()];
-        m_proxy->setGroupMappingValue(hashval, group);
+        m_proxy->setSlot(hashval, group);
     }
 }
 
 void ProxyManager::onSetGroupTTL(int, short, void* arg)
 {
     GroupInfo* info = (GroupInfo*)arg;
-    Logger::log(Logger::Message, "TTL: Remove group '%s'...", info->group->groupName());
+    LOG(Logger::Message, "Remove group '%s'...", info->group->groupName());
     RedisServantGroup* group = info->group;
     if (group->isEnabled()) {
-        Logger::log(Logger::Message, "TTL: Group '%s' is actived. Has been cancelled to remove",
+        LOG(Logger::Message, "Group '%s' is actived. cancelled to remove",
                     info->group->groupName());
         info->can_ttl = true;
         return;
@@ -117,8 +117,7 @@ void ProxyManager::onSetGroupTTL(int, short, void* arg)
 
     info->manager->removeGroup(group);
     if (info->restore) {
-        Logger::log(Logger::Message, "When the group '%s' becomes active state before will restore",
-                    info->group->groupName());
+        LOG(Logger::Message, "Restore group '%s'", info->group->groupName());
         info->ev.setTimer(info->manager->proxy()->eventLoop(), onRestoreGroup, info);
         info->ev.active(500);
     }
@@ -129,10 +128,10 @@ void ProxyManager::onRestoreGroup(int, short, void* arg)
     GroupInfo* info = (GroupInfo*)arg;
     RedisServantGroup* group = info->group;
     if (group->isEnabled()) {
-        Logger::log(Logger::Message, "Group '%s' has been restored", info->group->groupName());
+        LOG(Logger::Message, "Group '%s' has been restored", info->group->groupName());
         std::vector<int>::iterator it = info->oldHashValues.begin();
         for (; it != info->oldHashValues.end(); ++it) {
-            info->manager->proxy()->setGroupMappingValue(*it, group);
+            info->manager->proxy()->setSlot(*it, group);
         }
         info->can_ttl = true;
     } else {

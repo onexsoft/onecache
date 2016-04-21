@@ -295,9 +295,15 @@ RedisProto::ParseState RedisProto::parse(char *s, int len, RedisProtoParseResult
         result->type = RedisProtoParseResult::MultiBulk;
         ret = readMultiBulk(s, len, result->tokens, &result->tokenCount);
         break;
-    default:
-        result->type = RedisProtoParseResult::Unknown;
-        ret = READ_ERROR;
+    default: {
+        int stringlen = 0;
+        result->type = RedisProtoParseResult::Bulk;
+        ret = readTextEndByCRLF(s, len, &stringlen);
+        if (ret > 0) {
+            result->tokens[0].s = s;
+            result->tokens[0].len = stringlen;
+        }
+    }
         break;
     }
 

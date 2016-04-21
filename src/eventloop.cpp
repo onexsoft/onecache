@@ -82,13 +82,15 @@ void EventLoop::exec(void)
 {
     if (m_event_loop) {
         if (event_base_dispatch(m_event_loop) < 0) {
-            Logger::log(Logger::Error, "EventLoop::exec: event_base_dispatch() failed");
+            LOG(Logger::Error, "EventLoop::exec: event_base_dispatch() failed");
         }
     }
 }
 
 void EventLoop::exit(int timeout)
 {
+    event_base_loopbreak(m_event_loop);
+    return;
     if (m_event_loop) {
         timeval* p = NULL;
         timeval val;
@@ -98,7 +100,7 @@ void EventLoop::exit(int timeout)
             p = &val;
         }
         if (event_base_loopexit(m_event_loop, p) < 0) {
-            Logger::log(Logger::Error, "EventLoop::exit: event_base_loopexit() failed");
+            LOG(Logger::Error, "EventLoop::exit: event_base_loopexit() failed");
         }
     }
 }
@@ -148,31 +150,31 @@ void EventLoopThreadPool::start(int size)
 
     m_size = size;
     if (m_size <= 0 || m_size > MaxThreadCount) {
-        Logger::log(Logger::Warning, "EventLoopThreadPool::start: size out of range. use default size");
+        LOG(Logger::Warning, "EventLoopThreadPool::start: size out of range. use default size");
         m_size = DefaultThreadCount;
     }
 
-    Logger::log(Logger::Message, "Create the thread pool...");
+    LOG(Logger::Message, "Create the thread pool...");
     m_threads = new EventLoopThread[m_size];
     for (int i = 0; i < m_size; ++i) {
         m_threads[i].start();
     }
 
     Thread::sleep(100);
-    Logger::log(Logger::Message, "Thread pool created. size: %d", m_size);
+    LOG(Logger::Message, "Thread pool created. size: %d", m_size);
 }
 
 void EventLoopThreadPool::stop(void)
 {
     if (m_threads) {
-        Logger::log(Logger::Message, "Destroy thread pool...");
+        LOG(Logger::Message, "Destroy thread pool...");
         for (int i = 0; i < m_size; ++i) {
             m_threads[i].exit();
         }
         delete []m_threads;
         m_threads = NULL;
         m_size = 0;
-        Logger::log(Logger::Message, "Thread pool destroyed");
+        LOG(Logger::Message, "Thread pool destroyed");
     }
 }
 

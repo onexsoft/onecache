@@ -22,6 +22,8 @@
 
 #include "command.h"
 
+void onAuthCommand(ClientPacket*, void*);
+
 void onStandardKeyCommand(ClientPacket*, void*);
 
 void onDelCommand(ClientPacket*, void*);

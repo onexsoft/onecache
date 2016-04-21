@@ -20,6 +20,8 @@
 #ifndef REDISSERVANT_H
 #define REDISSERVANT_H
 
+#include <string>
+
 #include "util/vector.h"
 #include "util/queue.h"
 #include "util/locker.h"
@@ -34,7 +36,7 @@ public:
     RedisConnection(void);
     ~RedisConnection(void);
 
-    bool connect(const HostAddress& addr);
+    bool connect(const HostAddress& addr, const std::string& pwd);
     bool isActived(void) const { return !m_socket.isNull(); }
     void disconnect(void);
 
@@ -50,6 +52,9 @@ class RedisConnectionPool
 public:
     RedisConnectionPool(void);
     ~RedisConnectionPool(void);
+
+    void setPassword(const std::string& pwd) { m_password = pwd; }
+    std::string password(void) const { return m_password; }
 
     const HostAddress& redisAddress(void) const { return m_redisAddress; }
     int capacity(void) const { return m_capacity; }
@@ -68,7 +73,9 @@ private:
     SpinLocker m_locker;
     int m_capacity;
     int m_activeConnNums;
-    Vector<RedisConnection*> m_pool;
+    std::string m_password;
+    //Vector<RedisConnection*> m_pool;
+    Queue<RedisConnection*> m_pool;
 };
 
 class RedisServant
@@ -105,8 +112,7 @@ public:
     void setEventLoop(EventLoop* loop) { m_loop = loop; }
     EventLoop* eventLoop(void) const { return m_loop; }
 
-    RedisConnectionPool* connectionPool(void) const
-    { return (RedisConnectionPool*)&m_connPool; }
+    RedisConnectionPool* connectionPool(void) { return &m_connPool; }
 
     bool isActived(void) const { return m_actived; }
     bool start(void);

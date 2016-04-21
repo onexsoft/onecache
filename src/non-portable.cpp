@@ -260,7 +260,7 @@ void NonPortable::guard(void (*driverFunc)(), int exit_key)
             int status;
             pid_t pidWait = waitpid(pid, &status, 0);
             if (pidWait < 0) {
-                Logger::log(Logger::Error, "waitpid() failed");
+                LOG(Logger::Error, "waitpid() failed");
                 exit(0);
             }
 
@@ -269,9 +269,9 @@ void NonPortable::guard(void (*driverFunc)(), int exit_key)
                     exit(0);
                 }
             }
-            Logger::log(Logger::Message, "Restart the program...", status);
+            LOG(Logger::Message, "Restart the program...", status);
         } else {
-            Logger::log(Logger::Error, "fork() failed");
+            LOG(Logger::Error, "fork() failed");
             exit(1);
         }
     } while (true);
@@ -291,7 +291,7 @@ int NonPortable::daemonize(void)
     pid = fork();
     switch (pid) {
     case -1:
-        Logger::log(Logger::Error, "fork() failed: %s", strerror(errno));
+        LOG(Logger::Error, "fork() failed: %s", strerror(errno));
         return 1;
 
     case 0:
@@ -303,19 +303,19 @@ int NonPortable::daemonize(void)
 
     sid = setsid();
     if (sid < 0) {
-        Logger::log(Logger::Error, "setsid() failed: %s", strerror(errno));
+        LOG(Logger::Error, "setsid() failed: %s", strerror(errno));
         return 1;
     }
 
     if (signal(SIGHUP, SIG_IGN) == SIG_ERR) {
-        Logger::log(Logger::Error, "signal(SIGHUP, SIG_IGN) failed: %s", strerror(errno));
+        LOG(Logger::Error, "signal(SIGHUP, SIG_IGN) failed: %s", strerror(errno));
         return 1;
     }
 
     pid = fork();
     switch (pid) {
     case -1:
-        Logger::log(Logger::Error, "fork() failed: %s", strerror(errno));
+        LOG(Logger::Error, "fork() failed: %s", strerror(errno));
         return 1;
 
     case 0:
@@ -330,27 +330,27 @@ int NonPortable::daemonize(void)
 
     fd = open("/dev/null", O_RDWR);
     if (fd < 0) {
-        Logger::log(Logger::Error, "open(\"/dev/null\") failed: %s", strerror(errno));
+        LOG(Logger::Error, "open(\"/dev/null\") failed: %s", strerror(errno));
         return 1;
     }
 
     status = dup2(fd, STDIN_FILENO);
     if (status < 0) {
-        Logger::log(Logger::Error, "dup2(%d, STDIN) failed: %s", fd, strerror(errno));
+        LOG(Logger::Error, "dup2(%d, STDIN) failed: %s", fd, strerror(errno));
         close(fd);
         return 1;
     }
 
     status = dup2(fd, STDOUT_FILENO);
     if (status < 0) {
-        Logger::log(Logger::Error, "dup2(%d, STDOUT) failed: %s", fd, strerror(errno));
+        LOG(Logger::Error, "dup2(%d, STDOUT) failed: %s", fd, strerror(errno));
         close(fd);
         return 1;
     }
 
     status = dup2(fd, STDERR_FILENO);
     if (status < 0) {
-        Logger::log(Logger::Error, "dup2(%d, STDERR) failed: %s", fd, strerror(errno));
+        LOG(Logger::Error, "dup2(%d, STDERR) failed: %s", fd, strerror(errno));
         close(fd);
         return 1;
     }
@@ -358,13 +358,13 @@ int NonPortable::daemonize(void)
     if (fd > STDERR_FILENO) {
         status = close(fd);
         if (status < 0) {
-            Logger::log(Logger::Error, "close(%d) failed: %s", fd, strerror(errno));
+            LOG(Logger::Error, "close(%d) failed: %s", fd, strerror(errno));
             return 1;
         }
     }
 
     if (chdir(appdirptr) != -1) {
-        Logger::log(Logger::Error, "chdir() failed");
+        LOG(Logger::Error, "chdir() failed");
     }
 #endif
     return 0;

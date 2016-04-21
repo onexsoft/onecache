@@ -86,6 +86,7 @@ void onDelPacketFinished(ClientPacket* packet, void* arg)
 }
 
 
+
 void onStandardKeyCommand(ClientPacket* packet, void*)
 {
     char* key = packet->recvParseResult.tokens[1].s;
@@ -103,8 +104,8 @@ void onMGetCommand(ClientPacket* packet, void*)
     }
 
     if (keyCount == 1) {
-        char* key = r.tokens[0].s;
-        int len = r.tokens[0].len;
+        char* key = r.tokens[1].s;
+        int len = r.tokens[1].len;
         packet->proxy()->handleClientPacket(key, len, packet);
     } else {
         MGetCommandContext* mgetcontext = new MGetCommandContext;
@@ -125,7 +126,7 @@ void onMGetCommand(ClientPacket* packet, void*)
             get->recvBuff.append(key, len);
             get->recvBuff.append("\r\n");
             mgetcontext->subs[i-1] = get;
-            get->parseRecvBuffer();
+            get->continueToParseRecvBuffer();
             packet->proxy()->handleClientPacket(key, len, get);
         }
     }
@@ -141,8 +142,8 @@ void onMSetCommand(ClientPacket* packet, void*)
     }
 
     if (keyvalCount == 1) {
-        char* key = r.tokens[0].s;
-        int len = r.tokens[0].len;
+        char* key = r.tokens[1].s;
+        int len = r.tokens[1].len;
         packet->proxy()->handleClientPacket(key, len, packet);
     } else {
         MSetCommandContext* msetcontext = new MSetCommandContext;
@@ -168,7 +169,7 @@ void onMSetCommand(ClientPacket* packet, void*)
             set->recvBuff.appendFormatString("$%d\r\n", vallen);
             set->recvBuff.append(val, vallen);
             set->recvBuff.append("\r\n");
-            set->parseRecvBuffer();
+            set->continueToParseRecvBuffer();
             packet->proxy()->handleClientPacket(key, len, set);
         }
     }
@@ -183,8 +184,8 @@ void onDelCommand(ClientPacket* packet, void*)
         return;
     }
     if (keyCount == 1) {
-        char* key = r.tokens[0].s;
-        int len = r.tokens[0].len;
+        char* key = r.tokens[1].s;
+        int len = r.tokens[1].len;
         packet->proxy()->handleClientPacket(key, len, packet);
     } else {
         DelCommandContext* delcontext = new DelCommandContext;
@@ -205,7 +206,7 @@ void onDelCommand(ClientPacket* packet, void*)
             del->recvBuff.appendFormatString("*2\r\n$3\r\nDEL\r\n$%d\r\n", len);
             del->recvBuff.append(key, len);
             del->recvBuff.append("\r\n");
-            del->parseRecvBuffer();
+            del->continueToParseRecvBuffer();
             packet->proxy()->handleClientPacket(key, len, del);
         }
     }
@@ -268,7 +269,7 @@ void onHashMapping(ClientPacket* packet, void*)
         return;
     }
 
-    if (proxy->setGroupMappingValue(hashValue, group)) {
+    if (proxy->setSlot(hashValue, group)) {
         packet->sendBuff.append("+OK\r\n");
         CRedisProxyCfg::instance()->saveProxyLastState(proxy);
     } else {
@@ -336,9 +337,9 @@ void onShowMapping(ClientPacket* packet, void*)
 
     packet->sendBuff.append("[HASH MAPPING]\n");
     packet->sendBuff.appendFormatString("%-15s %-15s\n", "HASH_VALUE", "GROUP_NAME");
-    for (int i = 0; i < proxy->maxHashValue(); ++i) {
+    for (int i = 0; i < proxy->slotCount(); ++i) {
         packet->sendBuff.appendFormatString("%-15d %-15s\n",
-                                            i, proxy->hashForGroup(i)->groupName());
+                                            i, proxy->groupBySlot(i)->groupName());
     }
     packet->sendBuff.append("\n");
     packet->sendBuff.append("[KEY MAPPING]\n");
@@ -415,3 +416,28 @@ void onShutDown(ClientPacket* packet, void*)
         }
     }
 }
+
+void onAuthCommand(ClientPacket* packet, void *)
+{
+    RedisProtoParseResult& r = packet->recvParseResult;
+    if (r.tokenCount != 2) {
+        packet->setFinishedState(ClientPacket::WrongNumberOfArguments);
+        return;
+    }
+    const std::string onecachePassword = packet->proxy()->password();
+    if (onecachePassword.empty()) {
+        packet->sendBuff.append("-ERR Client sent AUTH, but no password is set\r\n");
+        packet->setFinishedState(ClientPacket::RequestFinished);
+        return;
+    }
+    const std::string password(r.tokens[1].s, r.tokens[1].len);
+    if (password == onecachePassword) {
+        packet->auth = true;
+        packet->sendBuff.append("+OK\r\n");
+    } else {
+        packet->sendBuff.append("-ERR invalid password\r\n");
+    }
+    packet->setFinishedState(ClientPacket::RequestFinished);
+}
+
+

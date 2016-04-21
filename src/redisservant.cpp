@@ -30,24 +30,37 @@ RedisConnection::~RedisConnection(void)
     disconnect();
 }
 
-bool RedisConnection::connect(const HostAddress& addr)
+bool RedisConnection::connect(const HostAddress& addr, const std::string &pwd)
 {
     timeval defaultVal;
     socketlen_t len = sizeof(timeval);
     TcpSocket sock = TcpSocket::createTcpSocket();
     if (sock.isNull()) {
-        Logger::log(Logger::Error, "RedisConnection::connect: %s", strerror(errno));
+        LOG(Logger::Error, "RedisConnection::connect: %s", strerror(errno));
         return false;
     }
 
     sock.option(SOL_SOCKET, SO_SNDTIMEO, (char*)&defaultVal, &len);
 
-    timeval sndTimeout = {1, 0};
+    timeval sndTimeout = {5, 0};
     sock.setOption(SOL_SOCKET, SO_SNDTIMEO, (char*)&sndTimeout, sizeof(timeval));
     if (!sock.connect(addr)) {
-        Logger::log(Logger::Error, "RedisConnection::connect: %s", strerror(errno));
+        LOG(Logger::Error, "RedisConnection::connect: %s", strerror(errno));
         sock.close();
         return false;
+    }
+
+    //AUTH password
+    if (!pwd.empty()) {
+        char authBuf[512] = {0};
+        sprintf(authBuf, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", (int)pwd.length(), pwd.c_str());
+        sock.send(authBuf, strlen(authBuf));
+        char recvBuf[512];
+        sock.recv(recvBuf, sizeof(recvBuf));
+        char c = recvBuf[0];
+        if ('-' == c) {
+            LOG(Logger::Error, "RedisConnection::connect:: authentication failed");
+        }
     }
 
     sock.setOption(SOL_SOCKET, SO_SNDTIMEO, (char*)&defaultVal, sizeof(timeval));
@@ -80,11 +93,11 @@ RedisConnectionPool::~RedisConnectionPool(void)
 bool RedisConnectionPool::open(const HostAddress& addr, int capacity)
 {
     close();
-    Logger::log(Logger::Message, "Create connection pool (%s:%d)...",
+    LOG(Logger::Message, "Create connection pool (%s:%d) ...",
                 addr.ip(), addr.port());
 
     if (capacity <= 0) {
-        Logger::log(Logger::Error, "Create failed: capacity parameter error");
+        LOG(Logger::Error, "Create failed: capacity parameter error");
         return false;
     }
 
@@ -93,28 +106,28 @@ bool RedisConnectionPool::open(const HostAddress& addr, int capacity)
 
     for (int i = 0; i < m_capacity; ++i) {
         RedisConnection* sock = new RedisConnection;
-        if (!sock->connect(addr)) {
+        if (!sock->connect(addr, m_password)) {
             delete sock;
             close();
             return false;
         } else {
-            m_pool.push_back(sock);
+            m_pool.append(sock);
         }
     }
-    Logger::log(Logger::Message, "Creating successful. nums: %d", m_pool.size());
+    LOG(Logger::Message, "Creating successful. nums: %d", m_pool.size());
     return true;
 }
 
 RedisConnection *RedisConnectionPool::select(void)
 {
     m_locker.lock();
-    RedisConnection* sock = m_pool.pop_back(NULL);
+    RedisConnection* sock = m_pool.take(NULL);
     if (sock) {
         ++m_activeConnNums;
     } else {
         if ((m_pool.size() + m_activeConnNums) < m_capacity) {
             sock = new RedisConnection;
-            if (!sock->connect(m_redisAddress)) {
+            if (!sock->connect(m_redisAddress, m_password)) {
                 delete sock;
                 sock = NULL;
             } else {
@@ -129,7 +142,7 @@ RedisConnection *RedisConnectionPool::select(void)
 void RedisConnectionPool::unSelect(RedisConnection *sock)
 {
     m_locker.lock();
-    m_pool.push_back(sock);
+    m_pool.append(sock);
     --m_activeConnNums;
     m_locker.unlock();
 }
@@ -137,7 +150,7 @@ void RedisConnectionPool::unSelect(RedisConnection *sock)
 bool RedisConnectionPool::repairSocket(RedisConnection *sock)
 {
     sock->disconnect();
-    return sock->connect(m_redisAddress);
+    return sock->connect(m_redisAddress, m_password);
 }
 
 void RedisConnectionPool::free(RedisConnection *sock)
@@ -152,7 +165,7 @@ void RedisConnectionPool::close(void)
 {
     m_locker.lock();
     while (1) {
-        RedisConnection* sock = m_pool.pop_back(NULL);
+        RedisConnection* sock = m_pool.take(NULL);
         if (sock != NULL) {
             delete sock;
         } else {
@@ -192,7 +205,7 @@ bool RedisServant::start(void)
         return false;
     }
 
-    if (m_connListener.connect(m_redisAddress)) {
+    if (m_connListener.connect(m_redisAddress, m_connPool.password())) {
         m_connEvent.set(m_loop, m_connListener.m_socket.socket(), EV_READ, onDisconnected, this);
         m_connEvent.active();
     }
@@ -207,7 +220,8 @@ void RedisServant::stop(void)
     while (1) {
         ClientPacket* packet = m_requests.take(NULL);
         if (packet != NULL) {
-            packet->setFinishedState(ClientPacket::RequestError);
+            packet->sendBuff.append("-ERR server is not available\r\n");
+            packet->setFinishedState(ClientPacket::RequestFinished);
         } else {
             break;
         }
@@ -222,13 +236,15 @@ void RedisServant::handle(ClientPacket* packet)
     packet->requestServant = this;
     RedisConnection* sock = m_connPool.select();
     if (sock == NULL) {
-        m_locker.lock();
         if (m_actived) {
+            m_locker.lock();
             m_requests.append(packet);
             m_locker.unlock();
         } else {
-            m_locker.unlock();
-            packet->setFinishedState(ClientPacket::RequestError);
+            LOG(Logger::Debug, "Redis server (%s:%d) is not active",
+                m_redisAddress.ip(), m_redisAddress.port());
+            packet->sendBuff.append("-ERR server is not available\r\n");
+            packet->setFinishedState(ClientPacket::RequestFinished);
         }
     } else {
         packet->redisSocket = sock;
@@ -258,16 +274,16 @@ void RedisServant::onReconnect(socket_t, short, void* arg)
 
     RedisServant::Option opt = servant->option();
     if (servant->m_reconnCount >= opt.maxReconnCount) {
-        Logger::log(Logger::Message, "Stop the reconnection");
+        LOG(Logger::Message, "Stop the reconnection");
         return;
     }
 
     ++servant->m_reconnCount;
-    Logger::log(Logger::Message, "(%d) Reconnect to redis...", servant->m_reconnCount);
+    LOG(Logger::Message, "(%d) Reconnect to redis server...", servant->m_reconnCount);
     if (!servant->start()) {
         servant->m_connEvent.setTimer(servant->m_loop, onReconnect, servant);
         servant->m_connEvent.active(opt.reconnInterval * 1000);
-        Logger::log(Logger::Message, "After %d second(s) reconnection...", opt.reconnInterval);
+        LOG(Logger::Message, "After %d second(s) reconnection...", opt.reconnInterval);
     } else {
         servant->m_reconnCount = 0;
     }
@@ -279,13 +295,20 @@ void RedisServant::onDisconnected(socket_t sock, short, void *arg)
     int len = recv(sock, buff, sizeof(buff), 0);
     if (len == 0) {
         RedisServant* servant = (RedisServant*)arg;
+        servant->m_connListener.disconnect();
+        if (servant->m_connListener.connect(servant->m_redisAddress, servant->m_connPool.password())) {
+            servant->m_connEvent.set(servant->m_loop,
+                                     servant->m_connListener.m_socket.socket(),
+                                     EV_READ, onDisconnected, servant);
+            servant->m_connEvent.active();
+            return;
+        }
+
         servant->stop();
 
-        Logger::log(Logger::Warning, "Redis (%s:%d) disconnected",
+        LOG(Logger::Warning, "Redis server (%s:%d) disconnected",
                     servant->redisAddress().ip(),
                     servant->redisAddress().port());
-
-        servant->m_connListener.disconnect();
         onReconnect(0, 0, servant);
     }
 }
@@ -300,13 +323,14 @@ void RedisServant::onSendRequest(socket_t sock, short, void *arg)
     int sendSize = packet->recvParseResult.protoBuffLen - packet->sendToRedisBytes;
 
     TcpSocket socket(sock);
-    int ret = socket.nonblocking_send(sendBuff, sendSize);
+    int ret = socket.asyncSend(sendBuff, sendSize);
     switch (ret) {
     default:
         packet->sendToRedisBytes += ret;
         if (packet->sendToRedisBytes != packet->recvParseResult.protoBuffLen) {
             onSendRequest(sock, 0, packet);
         } else {
+            packet->sendToRedisBytes = 0;
             packet->_event.set(packet->eventLoop, sock, EV_READ, onRecvReply, packet);
             packet->_event.active();
         }
@@ -316,12 +340,15 @@ void RedisServant::onSendRequest(socket_t sock, short, void *arg)
         packet->_event.active();
         break;
     case TcpSocket::IOError:
+        LOG(Logger::Debug, "Send to redis server (%s:%d) failed. socket=%d",
+            redisServant->redisAddress().ip(), redisServant->redisAddress().port(), sock);
         if (!redisServant->m_connPool.repairSocket(redisSocket)) {
             redisServant->m_connPool.free(redisSocket);
         } else {
             redisServant->onRedisSocketUseCompleted(redisSocket);
         }
-        packet->setFinishedState(ClientPacket::RequestError);
+        packet->sendBuff.append("-ERR backend connection invalid\r\n");
+        packet->setFinishedState(ClientPacket::RequestFinished);
         break;
     }
 }
@@ -334,14 +361,17 @@ void RedisServant::onRecvReply(socket_t sock, short, void *arg)
     IOBuffer& sendbuf = packet->sendBuff;
     IOBuffer::DirectCopy cp = sendbuf.beginCopy();
     TcpSocket socket(sock);
-    int ret = socket.nonblocking_recv(cp.address, cp.maxsize);
+    int ret = socket.asyncRecv(cp.address, cp.maxsize);
     switch (ret) {
     default:
         sendbuf.endCopy(ret);
-        switch (packet->parseSendBuffer()) {
+        switch (packet->continueToParseSendBuffer()) {
         case RedisProto::ProtoError:
+            LOG(Logger::Debug, "Recv data from redis server (%s:%d), protocol error",
+                redisServant->redisAddress().ip(), redisServant->redisAddress().port());
             redisServant->onRedisSocketUseCompleted(redisSocket);
-            packet->setFinishedState(ClientPacket::RequestError);
+            packet->sendBuff.append("-ERR backend protocol error\r\n");
+            packet->setFinishedState(ClientPacket::RequestFinished);
             break;
         case RedisProto::ProtoIncomplete:
             onRecvReply(sock, 0, packet);
@@ -354,17 +384,31 @@ void RedisServant::onRecvReply(socket_t sock, short, void *arg)
             break;
         }
         break;
-    case TcpSocket::IOAgain:
-        packet->_event.set(packet->eventLoop, sock, EV_READ, onRecvReply, packet);
-        packet->_event.active();
-        break;
-    case TcpSocket::IOError:
+    case 0:
+        LOG(Logger::Debug, "Redis server (%s:%d) closed the connection. socket=%d",
+            redisServant->redisAddress().ip(), redisServant->redisAddress().port(), sock);
         if (!redisServant->m_connPool.repairSocket(redisSocket)) {
             redisServant->m_connPool.free(redisSocket);
         } else {
             redisServant->onRedisSocketUseCompleted(redisSocket);
         }
-        packet->setFinishedState(ClientPacket::RequestError);
+        packet->sendBuff.append("-ERR server closed the connection\r\n");
+        packet->setFinishedState(ClientPacket::RequestFinished);
+        break;
+    case TcpSocket::IOAgain:
+        packet->_event.set(packet->eventLoop, sock, EV_READ, onRecvReply, packet);
+        packet->_event.active();
+        break;
+    case TcpSocket::IOError:
+        LOG(Logger::Debug, "Recv from redis server (%s:%d) failed. socket=%d",
+            redisServant->redisAddress().ip(), redisServant->redisAddress().port(), sock);
+        if (!redisServant->m_connPool.repairSocket(redisSocket)) {
+            redisServant->m_connPool.free(redisSocket);
+        } else {
+            redisServant->onRedisSocketUseCompleted(redisSocket);
+        }
+        packet->sendBuff.append("-ERR backend connection invalid\r\n");
+        packet->setFinishedState(ClientPacket::RequestFinished);
         break;
     }
 }

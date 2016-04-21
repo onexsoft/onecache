@@ -23,6 +23,7 @@
 #include "command.h"
 
 static RedisCommand _redisCommand[] = {
+    {"AUTH", 4, RedisCommand::AUTH, onAuthCommand, NULL},
     {"APPEND", 6, RedisCommand::APPEND, onStandardKeyCommand, NULL},
     {"BITCOUNT", 8, RedisCommand::BITCOUNT, onStandardKeyCommand, NULL},
     {"BITPOS", 6, RedisCommand::BITPOS, onStandardKeyCommand, NULL},
@@ -74,6 +75,10 @@ static RedisCommand _redisCommand[] = {
     {"PEXPIREAT", 9, RedisCommand::PEXPIREAT, onStandardKeyCommand, NULL},
     {"PTTL", 4, RedisCommand::PTTL, onStandardKeyCommand, NULL},
     {"PING", 4, RedisCommand::PING, onPingCommand, NULL},
+
+    {"PFADD", 5, RedisCommand::PFADD, onStandardKeyCommand, NULL},
+    {"PFCOUNT", 7, RedisCommand::PFCOUNT, onStandardKeyCommand, NULL},
+    {"PFMERGE", 7, RedisCommand::PFMERGE, onStandardKeyCommand, NULL},
 
     {"RESTORE", 7, RedisCommand::RESTORE, onStandardKeyCommand, NULL},
     {"RPOP", 4, RedisCommand::RPOP, onStandardKeyCommand, NULL},
@@ -165,21 +170,19 @@ int RedisCommandTable::registerCommand(RedisCommand *cmd, int cnt)
     return succeed;
 }
 
-void RedisCommandTable::execCommand(char *cmd, int len, ClientPacket *packet)
+RedisCommand *RedisCommandTable::findCommand(const char *cmd, int len) const
 {
-    //to upper
+    char* p = (char*)cmd;
     for (int i = 0; i < len; ++i) {
-        if (cmd[i] >= 'a' && cmd[i] <= 'z') {
-            cmd[i] += ('A' - 'a');
+        if (p[i] >= 'a' && p[i] <= 'z') {
+            p[i] += ('A' - 'a');
         }
     }
 
-    StringMap<RedisCommand*>::iterator it = m_cmdMap.find(String(cmd, len));
-    if (it != m_cmdMap.end()) {
-        RedisCommand* command = it->second;
-        packet->commandType = command->type;
-        command->proc(packet, command->arg);
+    StringMap<RedisCommand*>::const_iterator it = m_cmdMap.find(String(cmd, len));
+    if (it != m_cmdMap.cend()) {
+        return it->second;
     } else {
-        packet->setFinishedState(ClientPacket::ProtoNotSupport);
+        return NULL;
     }
 }

@@ -29,6 +29,7 @@ class RedisCommand
 {
 public:
     enum Type {
+        AUTH,
         APPEND,
         BITCOUNT, BITPOS,
         DUMP,DEL, DECR, DECRBY,
@@ -40,6 +41,7 @@ public:
         LPUSH, LPUSHX, LPOP, LRANGE, LREM, LINDEX, LINSERT, LLEN, LSET, LTRIM,
         MGET, MSET,
         PSETEX, PERSIST, PEXPIRE, PEXPIREAT, PTTL, PING,
+        PFADD, PFCOUNT, PFMERGE,
         RESTORE, RPOP, RPUSH, RPUSHX,
         SADD, SMEMBERS, SREM, SPOP, SCARD, SISMEMBER, SRANDMEMBER,
         SETBIT, SETRANGE, STRLEN, SET, SETEX, SETNX,
@@ -72,7 +74,7 @@ public:
     static RedisCommandTable* instance(void);
 
     int registerCommand(RedisCommand* cmd, int cnt);
-    void execCommand(char* cmd, int len, ClientPacket* packet);
+    RedisCommand* findCommand(const char* cmd, int len) const;
 
     const std::list<RedisCommand*>& commands(void) const { return m_cmds; }
 

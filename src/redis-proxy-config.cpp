@@ -60,8 +60,12 @@ CHostInfo::CHostInfo() {
     master = false;
     priority = 0;
     policy = 0;
+    connection_num = 50;
+    memset(password, '\0', sizeof(password));
 }
+
 CHostInfo::~CHostInfo(){}
+
 string CHostInfo::get_ip()const
 {
     return ip;
@@ -71,11 +75,12 @@ string CHostInfo::get_hostName()const
 {
     return host_name;
 }
-int CHostInfo::get_port()const        { return port;}
-bool CHostInfo::get_master()const     { return master;}
-int CHostInfo::get_policy()const      { return policy;}
-int CHostInfo::get_priority()const    { return priority;}
-int CHostInfo::get_connectionNum()const    { return connection_num;}
+int CHostInfo::get_port()const          { return port;}
+bool CHostInfo::get_master()const       { return master;}
+int CHostInfo::get_policy()const        { return policy;}
+int CHostInfo::get_priority()const      { return priority;}
+int CHostInfo::get_connectionNum()const { return connection_num;}
+const string CHostInfo::passWord()const  {return string(password, strlen(password));}
 
 void CHostInfo::set_ip(string& s)        { ip = s;}
 void CHostInfo::set_hostName(string& s)  { host_name = s;}
@@ -84,11 +89,16 @@ void CHostInfo::set_master(bool m)       { master = m;}
 void CHostInfo::set_policy(int p)        { policy = p;}
 void CHostInfo::set_priority(int p)      { priority = p;}
 void CHostInfo::set_connectionNum(int p) { connection_num = p;}
+void CHostInfo::set_passWord(const char* p) { strcpy(password, p);}
+
 
 CGroupInfo::CGroupInfo()
 {
     memset(m_groupName, '\0', sizeof(m_groupName));
     memset(m_groupPolicy, '\0', sizeof(m_groupPolicy));
+    m_weight = 1;
+    m_hashMin = 0;
+    m_hashMax = 0;
 }
 
 CGroupInfo::~CGroupInfo() {}
@@ -102,9 +112,12 @@ CRedisProxyCfg::CRedisProxyCfg() {
     memset(m_vip.vip_address, '\0', sizeof(m_vip.vip_address));
     m_vip.enable = false;
     memset(m_logFile, '\0', sizeof(m_logFile));
+    memset(m_pidFile, '\0', sizeof(m_pidFile));
     m_daemonize = false;
+    m_debug = false;
     m_guard = false;
     m_topKeyEnable = false;
+    m_isTwemproxyMode = false;
     m_hashMappingList = new HashMappingList;
     m_keyMappingList = new KeyMappingList;
     m_groupInfo = new GroupInfoList;
@@ -135,6 +148,11 @@ void CRedisProxyCfg::set_hashMin(CGroupInfo& group, int num) {
     group.m_hashMin = num;
 }
 
+void CRedisProxyCfg::set_weight(CGroupInfo& group, unsigned int weight) {
+    group.m_weight= weight;
+}
+
+
 void CRedisProxyCfg::set_hashMax(CGroupInfo& group, int num) {
     group.m_hashMax = num;
 }
@@ -156,6 +174,11 @@ void CRedisProxyCfg::set_groupAttribute(TiXmlAttribute *groupAttr, CGroupInfo& p
             set_hashMax(pGroup, atoi(value));
             continue;
         }
+        if (0 == strcasecmp(name, "weight")) {
+            set_weight(pGroup, (unsigned int)atoi(value));
+            continue;
+        }
+
         if (0 == strcasecmp(name, "name")) {
             set_groupName(pGroup, value);
             continue;
@@ -202,8 +225,11 @@ void CRedisProxyCfg::set_hostAttribute(TiXmlAttribute *addrAttr, CHostInfo& pHos
             pHostInfo.set_master((atoi(value) != 0));
             continue;
         }
+        if (0 == strcasecmp(name, "password")) {
+            pHostInfo.set_passWord(value);
+            continue;
+        }
     }
-
 }
 
 void CRedisProxyCfg::set_hostEle(TiXmlElement* hostContactEle, CHostInfo& hostInfo) {
@@ -247,6 +273,10 @@ void CRedisProxyCfg::set_hostEle(TiXmlElement* hostContactEle, CHostInfo& hostIn
             hostInfo.set_master((atoi(strText) != 0));
             continue;
         }
+        if (0 == strcasecmp(strValue, "password")) {
+            hostInfo.set_passWord(strText);
+            continue;
+        }
     }
 }
 
@@ -272,9 +302,33 @@ void CRedisProxyCfg::getRootAttr(const TiXmlElement* pRootNode) {
             strcpy(m_logFile, value);
             continue;
         }
+        if (0 == strcasecmp(name, "pid_file")) {
+            strcpy(m_pidFile, value);
+            continue;
+        }
+        if (0 == strcasecmp(name, "password")) {
+            m_password = value;
+            continue;
+        }
+        if (0 == strcasecmp(name, "hash")) {
+            m_hashFunction = value;
+            continue;
+        }
         if (0 == strcasecmp(name, "daemonize")) {
             if(strcasecmp(value, "0") != 0 && strcasecmp(value, "") != 0 ) {
                 m_daemonize = true;
+            }
+            continue;
+        }
+        if (0 == strcasecmp(name, "debug")) {
+            if(strcasecmp(value, "0") != 0 && strcasecmp(value, "") != 0 ) {
+                m_debug = true;
+            }
+            continue;
+        }
+        if (0 == strcasecmp(name, "twemproxy_mode")) {
+            if(strcasecmp(value, "0") != 0 && strcasecmp(value, "") != 0 ) {
+                m_isTwemproxyMode = true;
             }
             continue;
         }
@@ -413,6 +467,16 @@ void CRedisProxyCfg::getGroupNode(TiXmlElement* pNode) {
             set_hashMax(groupTmp, atoi(pNext->GetText()));
             continue;
         }
+
+        if (0 == strcasecmp(pNext->Value(), "weight")) {
+            if (NULL == pNext->GetText()) {
+                set_weight(groupTmp, 0);
+                continue;
+            }
+            set_weight(groupTmp, (unsigned int)atoi(pNext->GetText()));
+            continue;
+        }
+
         if (0 == strcasecmp(pNext->Value(), "name")) {
             set_groupName(groupTmp, pNext->GetText());
             continue;
@@ -456,10 +520,10 @@ bool CRedisProxyCfg::saveProxyLastState(RedisProxy* proxy) {
         pRootNode->RemoveChild(pOldHashMap);
     }
     TiXmlElement hashMappingNode("hash_mapping");
-    for (int i = 0; i < proxy->maxHashValue(); ++i) {
+    for (int i = 0; i < proxy->slotCount(); ++i) {
         TiXmlElement hashNode("hash");
         hashNode.SetAttribute("value", i);
-        hashNode.SetAttribute("group_name", proxy->hashForGroup(i)->groupName());
+        hashNode.SetAttribute("group_name", proxy->groupBySlot(i)->groupName());
         hashMappingNode.InsertEndChild(hashNode);
     }
     pRootNode->InsertEndChild(hashMappingNode);
@@ -574,9 +638,11 @@ bool CRedisProxyCfg::loadCfg(const char* file) {
 bool CRedisProxyCfgChecker::isValid(CRedisProxyCfg* pCfg, const char*& errMsg)
 {
     const int hash_value_max = pCfg->hashInfo()->hash_value_max;
-    if (hash_value_max > REDIS_PROXY_HASH_MAX) {
-        errMsg = "hash_value_max is not greater than 1024";
-        return false;
+    if (!pCfg->isTwemproxyMode()) {
+        if (hash_value_max > REDIS_PROXY_HASH_MAX) {
+            errMsg = "hash_value_max is not greater than 1024";
+            return false;
+        }
     }
 
     int port = pCfg->port();
@@ -620,32 +686,35 @@ bool CRedisProxyCfgChecker::isValid(CRedisProxyCfg* pCfg, const char*& errMsg)
                 return false;
             }
         }
+        if (!pCfg->isTwemproxyMode()) {
+            if (group->hashMin() > group->hashMax()) {
+                errMsg = "hash_min > hash_max";
+                return false;
+            }
+            for (int j = group->hashMin(); j <= group->hashMax(); ++j) {
+                if (j < 0 || j > REDIS_PROXY_HASH_MAX) {
+                    errMsg = "hash value is invalid";
+                    return false;
+                }
+                if (j >= hash_value_max) {
+                    errMsg = "hash value is out of range";
+                    return false;
+                }
 
-        if (group->hashMin() > group->hashMax()) {
-            errMsg = "hash_min > hash_max";
-            return false;
-        }
-        for (int j = group->hashMin(); j <= group->hashMax(); ++j) {
-            if (j < 0 || j > REDIS_PROXY_HASH_MAX) {
-                errMsg = "hash value is invalid";
-                return false;
+                if (barray[j]) {
+                    errMsg = "hash range error";
+                    return false;
+                }
+                barray[j] = true;
             }
-            if (j >= hash_value_max) {
-                errMsg = "hash value is out of range";
-                return false;
-            }
-
-            if (barray[j]) {
-                errMsg = "hash range error";
-                return false;
-            }
-            barray[j] = true;
         }
     }
-    for (int i = 0; i < hash_value_max; ++i) {
-        if (!barray[i]) {
-            errMsg = "hash values are not complete";
-            return false;
+    if (!pCfg->isTwemproxyMode()) {
+        for (int i = 0; i < hash_value_max; ++i) {
+            if (!barray[i]) {
+                errMsg = "hash values are not complete";
+                return false;
+            }
         }
     }
 

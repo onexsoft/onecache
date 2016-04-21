@@ -28,12 +28,13 @@
 ClientPacket::ClientPacket(void)
 {
     commandType = -1;
-    recvBufferOffset = 0;
-    sendBufferOffset = 0;
+    recvBufferParsedOffset = 0;
+    sendBufferParsedOffset = 0;
     finishedState = 0;
     sendToRedisBytes = 0;
     requestServant = NULL;
     redisSocket = NULL;
+    auth = false;
     finished_func = defaultFinishedHandler;
 }
 
@@ -47,26 +48,28 @@ void ClientPacket::setFinishedState(ClientPacket::State state)
     finished_func(this, finished_arg);
 }
 
-RedisProto::ParseState ClientPacket::parseRecvBuffer(void)
+RedisProto::ParseState ClientPacket::continueToParseRecvBuffer(void)
 {
     recvParseResult.reset();
-    RedisProto::ParseState state = RedisProto::parse(recvBuff.data() + recvBufferOffset,
-                                                     recvBuff.size() - recvBufferOffset,
-                                                     &recvParseResult);
+    RedisProto::ParseState state;
+    state = RedisProto::parse(recvBuff.data() + recvBufferParsedOffset,
+                              recvBuff.size() - recvBufferParsedOffset,
+                              &recvParseResult);
     if (state == RedisProto::ProtoOK) {
-        recvBufferOffset += recvParseResult.protoBuffLen;
+        recvBufferParsedOffset += recvParseResult.protoBuffLen;
     }
     return state;
 }
 
-RedisProto::ParseState ClientPacket::parseSendBuffer(void)
+RedisProto::ParseState ClientPacket::continueToParseSendBuffer(void)
 {
     sendParseResult.reset();
-    RedisProto::ParseState state = RedisProto::parse(sendBuff.data() + sendBufferOffset,
-                                                     sendBuff.size() - sendBufferOffset,
-                                                     &sendParseResult);
+    RedisProto::ParseState state;
+    state = RedisProto::parse(sendBuff.data() + sendBufferParsedOffset,
+                              sendBuff.size() - sendBufferParsedOffset,
+                              &sendParseResult);
     if (state == RedisProto::ProtoOK) {
-        sendBufferOffset += sendParseResult.protoBuffLen;
+        sendBufferParsedOffset += sendParseResult.protoBuffLen;
     }
     return state;
 }
@@ -75,26 +78,25 @@ void ClientPacket::defaultFinishedHandler(ClientPacket *packet, void *)
 {
     switch (packet->finishedState) {
     case ClientPacket::Unknown:
-        packet->sendBuff.append("-Unknown state\r\n");
-        break;
-    case ClientPacket::ProtoError:
-        packet->sendBuff.append("-Proto error\r\n");
+        packet->sendBuff.append("-ERR unknown state\r\n");
+        packet->server->writeReply(packet);
         break;
     case ClientPacket::ProtoNotSupport:
-        packet->sendBuff.append("-Proto not support\r\n");
+        packet->sendBuff.append("-ERR protocol not support\r\n");
+        packet->server->writeReply(packet);
         break;
     case ClientPacket::WrongNumberOfArguments:
-        packet->sendBuff.append("-Wrong number of arguments\r\n");
-        break;
-    case ClientPacket::RequestError:
-        packet->sendBuff.append("-Request error\r\n");
+        packet->sendBuff.append("-ERR wrong number of arguments\r\n");
+        packet->server->writeReply(packet);
         break;
     case ClientPacket::RequestFinished:
+        packet->server->writeReply(packet);
         break;
     default:
+        LOG(Logger::Debug, "Unknown state %d", packet->finishedState);
+        packet->server->closeConnection(packet);
         break;
     }
-    packet->server->writeReply(packet);
 }
 
 
@@ -104,10 +106,8 @@ RedisProxy::RedisProxy(void)
 {
     m_monitor = &dummy;
     m_hashFunc = hashForBytes;
-    m_maxHashValue = DefaultMaxHashValue;
-    for (int i = 0; i < MaxHashValue; ++i) {
-        m_hashMapping[i] = NULL;
-    }
+    m_slotCount = 0;
+    m_slots = NULL;
     m_vipAddress[0] = 0;
     m_vipName[0] = 0;
     m_vipEnabled = false;
@@ -116,12 +116,14 @@ RedisProxy::RedisProxy(void)
     m_ejectAfterRestoreEnabled = false;
     m_threadPoolRefCount = 0;
     m_proxyManager.setProxy(this);
+    m_twemproxyMode = false;
 }
 
 RedisProxy::~RedisProxy(void)
 {
     for (int i = 0; i < m_groups.size(); ++i) {
-        delete m_groups.at(i);
+        RedisServantGroup* group = m_groups.at(i);
+        delete group;
     }
 }
 
@@ -133,11 +135,11 @@ bool RedisProxy::run(const HostAddress& addr)
 
     if (m_vipEnabled) {
         TcpSocket sock = TcpSocket::createTcpSocket();
-        Logger::log(Logger::Message, "connect to vip address(%s:%d)...", m_vipAddress, addr.port());
+        LOG(Logger::Message, "Connect to VIP address(%s:%d)...", m_vipAddress, addr.port());
         if (!sock.connect(HostAddress(m_vipAddress, addr.port()))) {
-            Logger::log(Logger::Message, "set VIP [%s,%s]...", m_vipName, m_vipAddress);
+            LOG(Logger::Message, "Set VIP address [%s,%s]...", m_vipName, m_vipAddress);
             int ret = NonPortable::setVipAddress(m_vipName, m_vipAddress, 0);
-            Logger::log(Logger::Message, "set_vip_address return %d", ret);
+            LOG(Logger::Message, "Set VIP address return %d", ret);
         } else {
             m_vipSocket = sock;
             m_vipEvent.set(eventLoop(), sock.socket(), EV_READ, vipHandler, this);
@@ -147,7 +149,6 @@ bool RedisProxy::run(const HostAddress& addr)
 
 
     m_monitor->proxyStarted(this);
-    Logger::log(Logger::Message, "Start the %s on port %d", APP_NAME, addr.port());
 
     RedisCommand cmds[] = {
         {"HASHMAPPING", 11, -1, onHashMapping, NULL},
@@ -167,15 +168,14 @@ void RedisProxy::stop(void)
     TcpServer::stop();
     if (m_vipEnabled) {
         if (!m_vipSocket.isNull()) {
-            Logger::log(Logger::Message, "delete vip...");
+            LOG(Logger::Message, "Delete VIP address...");
             int ret = NonPortable::setVipAddress(m_vipName, m_vipAddress, 1);
-            Logger::log(Logger::Message, "delete vip return %d", ret);
+            LOG(Logger::Message, "Delete VIP address return %d", ret);
 
             m_vipEvent.remove();
             m_vipSocket.close();
         }
     }
-    Logger::log(Logger::Message, "%s has stopped", APP_NAME);
 }
 
 void RedisProxy::addRedisGroup(RedisServantGroup *group)
@@ -186,19 +186,29 @@ void RedisProxy::addRedisGroup(RedisServantGroup *group)
     }
 }
 
-bool RedisProxy::setGroupMappingValue(int hashValue, RedisServantGroup *group)
+bool RedisProxy::setSlot(int n, RedisServantGroup *group)
 {
-    if (hashValue >= 0 && hashValue < MaxHashValue) {
-        m_hashMapping[hashValue] = group;
+    if (n >= 0 && n < m_slotCount) {
+        m_slots[n].group = group;
         return true;
     }
     return false;
 }
 
-RedisServantGroup *RedisProxy::hashForGroup(int hashValue) const
+void RedisProxy::setSlotCount(int n)
 {
-    if (hashValue >= 0 && hashValue < m_maxHashValue) {
-        return m_hashMapping[hashValue];
+    if (m_slots) {
+        delete []m_slots;
+    }
+    m_slotCount = n;
+    m_slots = new Slot[n];
+    memset(m_slots, 0, sizeof(Slot) * n);
+}
+
+RedisServantGroup *RedisProxy::groupBySlot(int n) const
+{
+    if (n >= 0 && n < m_slotCount) {
+        return m_slots[n].group;
     }
     return NULL;
 }
@@ -224,16 +234,46 @@ RedisServantGroup *RedisProxy::mapToGroup(const char* key, int len)
         }
     }
 
-    unsigned int hash_val = m_hashFunc(key, len);
-    unsigned int idx = hash_val % m_maxHashValue;
-    return m_hashMapping[idx];
+    if (!m_twemproxyMode) {
+        unsigned int hash = m_hashFunc(key, len);
+        unsigned int idx = hash % m_slotCount;
+        return m_slots[idx].group;
+    } else {
+        unsigned int hash = 0;
+        if (len == 0 || m_groups.size() == 1) {
+            hash = 0;
+        } else {
+            hash = m_hashFunc(key, len);
+        }
+
+        Slot *begin, *end, *left, *right, *middle;
+        begin = left = m_slots;
+        end = right = m_slots + m_slotCount;
+
+        while (left < right) {
+            middle = left + (right - left) / 2;
+            if (middle->value < hash) {
+                left = middle + 1;
+            } else {
+                right = middle;
+            }
+        }
+
+        if (right == end) {
+            right = begin;
+        }
+
+        return right->group;
+    }
 }
 
 void RedisProxy::handleClientPacket(const char *key, int len, ClientPacket *packet)
 {
     RedisServantGroup* group = mapToGroup(key, len);
     if (!group) {
-        packet->setFinishedState(ClientPacket::RequestError);
+        LOG(Logger::Debug, "Group is not available. mapToGroup return NULL");
+        packet->sendBuff.append("-ERR group is not available\r\n");
+        packet->setFinishedState(ClientPacket::RequestFinished);
         return;
     }
     RedisServant* servant = group->findUsableServant(packet);
@@ -245,7 +285,9 @@ void RedisProxy::handleClientPacket(const char *key, int len, ClientPacket *pack
             m_proxyManager.setGroupTTL(group, m_groupRetryTime, m_ejectAfterRestoreEnabled);
             m_groupMutex.unlock();
         }
-        packet->setFinishedState(ClientPacket::RequestError);
+        LOG(Logger::Debug, "Redis backend is not available. findUsableServant return NULL");
+        packet->sendBuff.append("-ERR backend is not available\r\n");
+        packet->setFinishedState(ClientPacket::RequestFinished);
     }
 }
 
@@ -280,6 +322,12 @@ Context *RedisProxy::createContextObject(void)
         loop = eventLoop();
     }
 
+    if (m_pwd.empty()) {
+        packet->auth = true;
+    } else {
+        packet->auth = false;
+    }
+
     packet->eventLoop = loop;
     return packet;
 }
@@ -305,8 +353,9 @@ void RedisProxy::clientConnected(Context* c)
 TcpServer::ReadStatus RedisProxy::readingRequest(Context *c)
 {
     ClientPacket* packet = (ClientPacket*)c;
-    switch (packet->parseRecvBuffer()) {
+    switch (packet->continueToParseRecvBuffer()) {
     case RedisProto::ProtoError:
+        LOG(Logger::Debug, "Read client request: protocol error");
         return ReadError;
     case RedisProto::ProtoIncomplete:
         return ReadIncomplete;
@@ -325,15 +374,32 @@ void RedisProxy::readRequestFinished(Context *c)
     int len = r.tokens[0].len;
 
     RedisCommandTable* cmdtable = RedisCommandTable::instance();
-    cmdtable->execCommand(cmd, len, packet);
+    RedisCommand* command = cmdtable->findCommand(cmd, len);
+    if (command) {
+        packet->commandType = command->type;
+        if (command->type == RedisCommand::AUTH) {
+            command->proc(packet, command->arg);
+        } else {
+            if (packet->auth) {
+                command->proc(packet, command->arg);
+            } else {
+                packet->sendBuff.append("-NOAUTH Authentication required.\r\n");
+                packet->setFinishedState(ClientPacket::RequestFinished);
+            }
+        }
+    } else {
+        LOG(Logger::Debug, "Command '%s' not support", String(cmd, len).data());
+        packet->setFinishedState(ClientPacket::ProtoNotSupport);
+    }
 }
 
 void RedisProxy::writeReply(Context *c)
 {
     ClientPacket* packet = (ClientPacket*)c;
-    if (!packet->isRecvParseEnd()) {
-        switch (packet->parseRecvBuffer()) {
+    if (!packet->isContinueToParseRecvBuffer()) {
+        switch (packet->continueToParseRecvBuffer()) {
         case RedisProto::ProtoError:
+            LOG(Logger::Debug, "Read client request: protocol error");
             closeConnection(c);
             break;
         case RedisProto::ProtoIncomplete:
@@ -363,8 +429,8 @@ void RedisProxy::writeReplyFinished(Context *c)
     packet->sendToRedisBytes = 0;
     packet->requestServant = NULL;
     packet->redisSocket = NULL;
-    packet->recvBufferOffset = 0;
-    packet->sendBufferOffset = 0;
+    packet->recvBufferParsedOffset = 0;
+    packet->sendBufferParsedOffset = 0;
     packet->sendParseResult.reset();
     packet->recvParseResult.reset();
     waitRequest(c);
@@ -376,9 +442,9 @@ void RedisProxy::vipHandler(socket_t sock, short, void* arg)
     RedisProxy* proxy = (RedisProxy*)arg;
     int ret = ::recv(sock, buff, 64, 0);
     if (ret == 0) {
-        Logger::log(Logger::Message, "disconnected from VIP. change vip address...");
+        LOG(Logger::Message, "Disconnected from VIP address. set VIP address...");
         int ret = NonPortable::setVipAddress(proxy->m_vipName, proxy->m_vipAddress, 0);
-        Logger::log(Logger::Message, "set_vip_address return %d", ret);
+        LOG(Logger::Message, "Set VIP address return %d", ret);
         proxy->m_vipSocket.close();
     }
 }
