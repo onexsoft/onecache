@@ -24,6 +24,14 @@ By the way, we have comercial database proxy for MySQL/PostgreSQL database, whic
 
 For any question, please contact by email flou(#)onexsoft.com, or chat by QQ 37223884
 
+# Update 2016/04/21
+
+  1, Add client side pipeline support
+  
+  2, Add twemproxy compatible mode (exactly the same consistent hash logic) to work togather with Twemproxy.
+  
+  3, Add some debug log information.
+
 # User List
 
 http://daojia.com
