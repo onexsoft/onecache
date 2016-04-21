@@ -37,7 +37,7 @@ HEADERS = src/eventloop.h \
 		src/top-key.h \
 		src/non-portable.h \
 		src/proxymanager.h \
-		src/cmdhandler.h 
+		src/cmdhandler.h
 
 SOURCES = src/eventloop.cpp \
 		src/util/logger.cpp \
@@ -62,12 +62,19 @@ SOURCES = src/eventloop.cpp \
 		src/monitor.cpp \
 		src/top-key.cpp \
 		src/non-portable.cpp \
-		src/cmdhandler.cpp
+		src/cmdhandler.cpp   \
+		src/util/md5.cpp    \
+		src/util/crc16.cpp  \
+		src/util/crc32.cpp  \
+		src/util/hsieh.cpp  \
+		src/util/jenkins.cpp \
+		src/util/fnv.cpp \
+		src/util/murmur.cpp
 
 OBJECTS = tmp/eventloop.o \
 		tmp/logger.o \
 		tmp/main.o \
-                tmp/hash.o \
+    tmp/hash.o \
 		tmp/redisproto.o \
 		tmp/redisproxy.o \
 		tmp/redisservant.o \
@@ -88,7 +95,14 @@ OBJECTS = tmp/eventloop.o \
 		tmp/top-key.o \
 		tmp/non-portable.o \
 		tmp/proxymanager.o \
-		tmp/cmdhandler.o
+		tmp/cmdhandler.o   \
+		tmp/md5.o \
+		tmp/crc16.o \
+		tmp/crc32.o \
+		tmp/hsieh.o \
+		tmp/jenkins.o \
+		tmp/fnv.o \
+		tmp/murmur.o 
 
 
 DESTDIR  =
@@ -138,7 +152,7 @@ tmp/logger.o: src/util/logger.cpp
 tmp/main.o: src/main.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/main.o src/main.cpp
 
-tmp/hash.o: src/util/hash.cpp	
+tmp/hash.o: src/util/hash.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/hash.o src/util/hash.cpp
 
 tmp/redisproto.o: src/redisproto.cpp
@@ -156,7 +170,7 @@ tmp/command.o: src/command.cpp
 tmp/tcpsocket.o: src/util/tcpsocket.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/tcpsocket.o src/util/tcpsocket.cpp
 
-tmp/tcpserver.o: src/util/tcpserver.cpp 
+tmp/tcpserver.o: src/util/tcpserver.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/tcpserver.o src/util/tcpserver.cpp
 
 tmp/thread.o: src/util/thread.cpp
@@ -195,11 +209,32 @@ tmp/monitor.o: src/monitor.cpp
 tmp/top-key.o: src/top-key.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/top-key.o src/top-key.cpp
 
-tmp/non-portable.o: src/non-portable.cpp 
+tmp/non-portable.o: src/non-portable.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/non-portable.o src/non-portable.cpp
 
-tmp/proxymanager.o: src/proxymanager.cpp 
+tmp/proxymanager.o: src/proxymanager.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/proxymanager.o src/proxymanager.cpp
 
-tmp/cmdhandler.o: src/cmdhandler.cpp 
+tmp/cmdhandler.o: src/cmdhandler.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/cmdhandler.o src/cmdhandler.cpp
+
+tmp/md5.o: src/util/md5.cpp
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/md5.o src/util/md5.cpp
+
+tmp/crc16.o: src/util/crc16.cpp
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/crc16.o src/util/crc16.cpp
+
+tmp/crc32.o: src/util/crc32.cpp
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/crc32.o src/util/crc32.cpp
+
+tmp/hsieh.o: src/util/hsieh.cpp
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/hsieh.o src/util/hsieh.cpp
+
+tmp/jenkins.o: src/util/jenkins.cpp
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/jenkins.o src/util/jenkins.cpp 
+
+tmp/fnv.o: src/util/fnv.cpp 
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/fnv.o src/util/fnv.cpp
+
+tmp/murmur.o: src/util/murmur.cpp 
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o tmp/murmur.o src/util/murmur.cpp
