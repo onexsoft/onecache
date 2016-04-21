@@ -26,17 +26,23 @@ void onReadClientHandler(socket_t, short, void* arg)
     Context* c = (Context*)arg;
     IOBuffer* buf = &c->recvBuff;
     IOBuffer::DirectCopy cp = buf->beginCopy();
-    int ret = c->clientSocket.nonblocking_recv(cp.address, cp.maxsize);
-    switch (ret) {
+    int n = c->clientSocket.asyncRecv(cp.address, cp.maxsize);
+    switch (n) {
+    case 0:
+        LOG(Logger::Debug, "Client (%s:%d) closed the connection",
+            c->clientAddress.ip(), c->clientAddress.port());
+        c->server->closeConnection(c);
+        break;
     case TcpSocket::IOAgain:
         c->server->waitRequest(c);
         break;
     case TcpSocket::IOError:
+        LOG(Logger::Debug, "Read client request: %s", strerror(errno));
         c->server->closeConnection(c);
         break;
     default:
-        buf->endCopy(ret);
-        c->recvBytes += ret;
+        buf->endCopy(n);
+        c->recvBytes += n;
         switch (c->server->readingRequest(c)) {
         case TcpServer::ReadFinished:
             c->server->readRequestFinished(c);
@@ -57,13 +63,14 @@ void onWriteClientHandler(socket_t, short, void* arg)
     Context* c = (Context*)arg;
     char* data = c->sendBuff.data() + c->sendBytes;
     int size = c->sendBuff.size() - c->sendBytes;
-    int ret = c->clientSocket.nonblocking_send(data, size);
+    int ret = c->clientSocket.asyncSend(data, size);
     switch (ret) {
     case TcpSocket::IOAgain:
         c->_event.set(c->eventLoop, c->clientSocket.socket(), EV_WRITE, onWriteClientHandler, c);
         c->_event.active();
         break;
     case TcpSocket::IOError:
+        LOG(Logger::Debug, "Write response to client: %s", strerror(errno));
         c->server->closeConnection(c);
         break;
     default:
@@ -112,6 +119,7 @@ void TcpServer::onAcceptHandler(evutil_socket_t sock, short, void* arg)
 
 TcpServer::TcpServer(void)
 {
+    m_loop = NULL;
 }
 
 TcpServer::~TcpServer(void)
@@ -121,14 +129,19 @@ TcpServer::~TcpServer(void)
 
 bool TcpServer::run(const HostAddress& addr)
 {
+    if (!m_loop) {
+        LOG(Logger::Error, "event loop not set");
+        return false;
+    }
+
     if (isRunning()) {
-        Logger::log(Logger::Error, "TcpServer::run: server is already running");
+        LOG(Logger::Error, "TcpServer::run: server is already running");
         return false;
     }
 
     TcpSocket tcpSocket = TcpSocket::createTcpSocket();
     if (tcpSocket.isNull()) {
-        Logger::log(Logger::Error, "TcpServer::run: %s", strerror(errno));
+        LOG(Logger::Error, "TcpServer::run: %s", strerror(errno));
         return false;
     }
 
@@ -137,26 +150,24 @@ bool TcpServer::run(const HostAddress& addr)
     tcpSocket.setNonBlocking();
 
     if (!tcpSocket.bind(addr)) {
-        Logger::log(Logger::Error, "TcpServer::run: bind failed at port %d: %s",
+        LOG(Logger::Error, "TcpServer::run: bind failed at port %d: %s",
                     addr.port(), strerror(errno));
         tcpSocket.close();
         return false;
     }
 
     if (!tcpSocket.listen(128)) {
-        Logger::log(Logger::Error, "TcpServer::run: listen failed at port %d: %s",
+        LOG(Logger::Error, "TcpServer::run: listen failed at port %d: %s",
                     addr.port(), strerror(errno));
         tcpSocket.close();
         return false;
     }
 
-    m_listener.set(&m_loop, tcpSocket.socket(), EV_READ | EV_PERSIST, onAcceptHandler, this);
+    m_listener.set(m_loop, tcpSocket.socket(), EV_READ | EV_PERSIST, onAcceptHandler, this);
     m_listener.active();
 
     m_socket = tcpSocket;
     m_addr = addr;
-
-    m_loop.exec();
     return true;
 }
 
@@ -170,7 +181,6 @@ void TcpServer::stop(void)
     if (isRunning()) {
         m_listener.remove();
         m_socket.close();
-        m_loop.exit();
     }
 }
 

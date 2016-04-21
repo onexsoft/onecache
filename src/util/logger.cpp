@@ -26,12 +26,14 @@
 
 static Logger _stdoutput;
 Logger* _defaultLogger = &_stdoutput;
+bool GlobalLogOption::__debug = false;
 
 static const char* msg_type_text[] =
 {
     "Message",
     "Warning",
-    "Error"
+    "Error",
+    "Debug"
 };
 
 Logger::Logger(void)
@@ -42,14 +44,9 @@ Logger::~Logger(void)
 {
 }
 
-void Logger::output(Logger::MsgType type, const char *msg)
+void Logger::output(const char *msg)
 {
-    time_t t = time(NULL);
-    tm* lt = localtime(&t);
-
-    printf("[%d-%02d-%02d %02d:%02d:%02d] %s: %s\n",
-           lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
-           lt->tm_hour, lt->tm_min, lt->tm_sec, msg_type_text[type], msg);
+    printf("%s\n", msg);
 }
 
 void Logger::log(Logger::MsgType type, const char *format, ...)
@@ -59,12 +56,41 @@ void Logger::log(Logger::MsgType type, const char *format, ...)
     }
 
     char buffer[10240];
+    time_t t = time(NULL);
+    tm* lt = localtime(&t);
+
+    int n = sprintf(buffer, "[%d-%02d-%02d %02d:%02d:%02d] %s: ",
+                    lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+                    lt->tm_hour, lt->tm_min, lt->tm_sec, msg_type_text[type]);
+
     va_list marker;
     va_start(marker, format);
-    vsprintf(buffer, format, marker);
+    vsprintf(buffer + n, format, marker);
     va_end(marker);
 
-    _defaultLogger->output(type, buffer);
+    _defaultLogger->output(buffer);
+}
+
+void Logger::log(const char *file, int line, Logger::MsgType type, const char *format, ...)
+{
+    if (!format || !_defaultLogger) {
+        return;
+    }
+
+    char buffer[10240];
+    time_t t = time(NULL);
+    tm* lt = localtime(&t);
+
+    int n = sprintf(buffer, "[%d-%02d-%02d %02d:%02d:%02d] %s: %s:%d ",
+                    lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+                    lt->tm_hour, lt->tm_min, lt->tm_sec, msg_type_text[type], file, line);
+
+    va_list marker;
+    va_start(marker, format);
+    vsprintf(buffer + n, format, marker);
+    va_end(marker);
+
+    _defaultLogger->output(buffer);
 }
 
 Logger *Logger::defaultLogger(void)
@@ -76,6 +102,7 @@ void Logger::setDefaultLogger(Logger *logger)
 {
     _defaultLogger = logger;
 }
+
 
 
 
@@ -112,13 +139,17 @@ bool FileLogger::setFileName(const char *fileName)
     return true;
 }
 
-void FileLogger::output(Logger::MsgType type, const char *msg)
+void FileLogger::output(const char *msg)
 {
+    /*
     time_t t = time(NULL);
     tm* lt = localtime(&t);
 
     fprintf(m_fp, "[%d-%02d-%02d %02d:%02d:%02d] %s: %s\n",
             lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
             lt->tm_hour, lt->tm_min, lt->tm_sec, msg_type_text[type], msg);
+    fflush(m_fp);
+    */
+    fprintf(m_fp, "%s\n", msg);
     fflush(m_fp);
 }

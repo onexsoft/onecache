@@ -94,7 +94,7 @@ public:
 
     bool connect(const HostAddress& addr);
 
-    //Blocking
+    //sync
     int send(const char *buf, int len, int flags = 0) {
         return ::send(m_socket, buf, len, flags);
     }
@@ -102,9 +102,9 @@ public:
         return ::recv(m_socket, buf, len, flags);
     }
 
-    //NonBlocking
-    int nonblocking_send(const char* buff, int size, int flag = 0);
-    int nonblocking_recv(char* buff, int size, int flag = 0);
+    //async
+    int asyncSend(const char* buff, int size, int flag = 0);
+    int asyncRecv(char* buff, int size, int flag = 0);
 
     void close(void);
     bool isNull(void) const;

@@ -61,7 +61,8 @@ public:
     TcpServer(void);
     virtual ~TcpServer(void);
 
-    EventLoop* eventLoop(void) { return &m_loop; }
+    EventLoop* eventLoop(void) { return m_loop; }
+    void setEventLoop(EventLoop* loop) { m_loop = loop; }
 
     const HostAddress& address(void) const { return m_addr; }
     bool run(const HostAddress& addr);
@@ -84,7 +85,7 @@ protected:
 private:
     HostAddress m_addr;
     Event m_listener;
-    EventLoop m_loop;
+    EventLoop* m_loop;
     TcpSocket m_socket;
 
 private:

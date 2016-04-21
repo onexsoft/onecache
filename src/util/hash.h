@@ -26,7 +26,23 @@
 #include "util/vector.h"
 
 typedef unsigned int (*HashFunc)(const char* s, int len);
+
 unsigned int hashForBytes(const char *key, int len);
+unsigned int hash_md5(const char *key, int len);
+void md5_signature(unsigned char *key, unsigned long length, unsigned char *result);
+
+unsigned int hash_crc16(const char *key, int len);
+unsigned int hash_crc32(const char *key, int len);
+unsigned int hash_crc32a(const char *key, int len);
+
+unsigned int hash_hsieh(const char *key, int len);
+unsigned int hash_jenkins(const char *key, int len);
+
+unsigned int hash_fnv1_64(const char *key, int len);
+unsigned int hash_fnv1a_64(const char *key, int len);
+unsigned int hash_fnv1_32(const char *key, int len);
+unsigned int hash_fnv1a_32(const char *key, int len);
+unsigned int hash_murmur(const char *key, int len);
 
 struct StringHashFunc {
     unsigned int operator()(const String& str) const {
@@ -34,12 +50,11 @@ struct StringHashFunc {
     }
 };
 
-#define HashTable std::unordered_map
-
 template <typename VAL>
-class StringMap : public HashTable<String, VAL, StringHashFunc>
+class StringMap : public std::unordered_map<String, VAL, StringHashFunc>
 {
 public:
 };
 
 #endif
+

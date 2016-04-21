@@ -24,11 +24,13 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
 #define SOCK_EAGAIN WSAEWOULDBLOCK
-#define SOCKET_ERRNO WSAGetLastError()
+#define SOCK_EINTR WSAEINTR
+#define SOCK_ERRNO WSAGetLastError()
 #else
 #define closesocket close
 #define SOCK_EAGAIN EAGAIN
-#define SOCKET_ERRNO (errno)
+#define SOCK_EINTR EINTR
+#define SOCK_ERRNO (errno)
 #endif
 
 
@@ -254,39 +256,48 @@ bool TcpSocket::connect(const HostAddress &addr)
     return true;
 }
 
-int TcpSocket::nonblocking_send(const char *buff, int size, int flag)
+int TcpSocket::asyncSend(const char *buff, int size, int flag)
 {
-    int ret = ::send(m_socket, buff, size, flag);
-    if (ret > 0) {
-        return ret;
-    } else if (ret == -1) {
-        switch(SOCKET_ERRNO) {
-        case SOCK_EAGAIN:
+    for (;;) {
+        int n = ::send(m_socket, buff, size, flag);
+        if (n > 0) {
+            return n;
+        }
+
+        if (n == 0) {
+            return n;
+        }
+
+        int err = SOCK_ERRNO;
+        if (err == SOCK_EINTR) {
+            continue;
+        } else if (err == SOCK_EAGAIN) {
             return IOAgain;
-        default:
+        } else {
             return IOError;
         }
-    } else {
-        return IOError;
     }
 }
 
-int TcpSocket::nonblocking_recv(char *buff, int size, int flag)
+int TcpSocket::asyncRecv(char *buff, int size, int flag)
 {
-    int ret = ::recv(m_socket, buff, size, flag);
-    if (ret > 0) {
-        return ret;
-    } else if (ret == 0) {
-        return IOError;
-    } else if (ret == -1) {
-        switch(SOCKET_ERRNO) {
-        case SOCK_EAGAIN:
+    for (;;) {
+        int n = ::recv(m_socket, buff, size, flag);
+        if (n > 0) {
+            return n;
+        }
+        if (n == 0) {
+            return n;
+        }
+
+        int err = SOCK_ERRNO;
+        if (err == SOCK_EINTR) {
+            continue;
+        } else if (err == SOCK_EAGAIN) {
             return IOAgain;
-        default:
+        } else {
             return IOError;
         }
-    } else {
-        return IOError;
     }
 }
 

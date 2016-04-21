@@ -33,6 +33,7 @@ unsigned int hashForBytes(const char *key, int len)
     return (hash & 0x7FFFFFFF);
     */
 
+
     const unsigned int m = 0x5bd1e995;
     const int r = 24;
     const int seed = 131;
@@ -68,3 +69,4 @@ unsigned int hashForBytes(const char *key, int len)
 
     return (unsigned int)h;
 }
+

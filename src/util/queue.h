@@ -77,6 +77,14 @@ public:
     bool isEmpty(void) const
     { return (m_entry == 0); }
 
+    int size(void) const {
+        int ret = 0;
+        for (Node* ptr = m_entry; ptr != NULL; ptr = ptr->next) {
+            ++ret;
+        }
+        return ret;
+    }
+
 private:
     Node* m_entry;
     Node* m_tail;
