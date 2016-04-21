@@ -1,4 +1,4 @@
-﻿<onecache port="8221" thread_num="12" hash_value_max="80" daemonize="0" guard ="0"  twemproxy_mode="1" debug="1">
+﻿<onecache port="8221" thread_num="12" hash_value_max="80" daemonize="0" guard ="0"  twemproxy_mode="0" debug="0">
   <vip if_alias_name="em1:0" vip_address="172.31.12.100" enable="0"></vip>
   <top_key enable="0"></top_key>
   <group_option backend_retry_interval="3" backend_retry_limit="100" auto_eject_group="1" group_retry_time="5" eject_after_restore="1">
