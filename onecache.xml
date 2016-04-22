@@ -1,27 +1,58 @@
-﻿<onecache port="8221" thread_num="12" hash_value_max="80" daemonize="0" guard ="0"  twemproxy_mode="0" debug="0">
-  <vip if_alias_name="em1:0" vip_address="172.31.12.100" enable="0"></vip>
-  <top_key enable="0"></top_key>
-  <group_option backend_retry_interval="3" backend_retry_limit="100" auto_eject_group="1" group_retry_time="5" eject_after_restore="1">
-  </group_option>
-  <group name="group1" hash_min="0" hash_max="19" policy="master_only">
-     <host host_name="host1" ip="172.31.12.11" port="6379" master="1" connection_num="200"></host>
-  </group>
-  <group name="group2" hash_min="20" hash_max="39" policy="master_only">
-     <host host_name="host2" ip="172.31.12.11" port="6380" master="1" connection_num="200"></host>
-  </group>
-  <group name="group3" hash_min="40" hash_max="59" policy="master_only">
-     <host host_name="host3" ip="172.31.12.11" port="6381" master="1" connection_num="200"></host>
-  </group>
-  <group name="group4" hash_min="60" hash_max="79" policy="master_only">
-     <host host_name="host4" ip="172.31.12.11" port="6382" master="1" connection_num="200"></host>
-  </group>
+﻿<onecache port="8221" thread_num="15" hash_value_max="80" daemonize="0" guard="0" log_file="" password="" pid_file="" hash=" fnv1a_64" twemproxy_mode="0" debug="0">
+    <!--port 运行端口-->
+    <!--thread_num 线程数-->
+    <!--hash_value_max 哈希槽个数(最大不得超过1024)-->
+    <!--daemonize 表示是否后台运行 1=YES 0=NO-->
+    <!--guard 表示是否启用守护进程 1=YES 0=NO-->
+    <!--log_file 表示输出的日志文件路径-->
+    <!--password onecache密码，客户端需要auth命令进行验证-->
+    <!--pid_file pid文件路径 -->
+    <!--hash hash方法名称，可以为空 -->
+    <!—twemproxy_mode 是否按twemproxy模式运行 注：只支持ketama方式，groupname对应servername-->
+    <!—debug 是否debug模式运行1=YES 0=NO debug模式将会得到更详细的运行日志，注：打印日志可能会很多，建议生产线上不要开启-->
 
-  <!--<hash_mapping>
-        <hash value="0" group_name="group4"></hash>
-        <hash value="1" group_name="group4"></hash>
-      </hash_mapping>
-      <key_mapping>
-        <key key_name="abc" group_name="group1"></key>
-      </key_mapping>
-  -->
+    <vip if_alias_name="eth0:0" vip_address="172.30.12.8" enable="0"></vip>
+    <!--VIP配置 if_alias_name表示适配器别名 vip_address 表示虚拟地址 enable 表示是否启用VIP功能 1:启用 0:禁用-->
+
+    <top_key enable=" 0"></top_key>
+    <!--是否启用TopKey统计功能1:启用 0:禁用-->
+
+    <group_option backend_retry_interval="3" backend_retry_limit="10" auto_eject_group="1" group_retry_time="30" eject_after_restore="1"></group_option>
+    <!--backend_retry_interval 表示后端断开后的重试连接的间隔时间-->
+    <!--backend_retry_limit 表示后端重试连接的最大次数-->
+    <!--auto_eject_group 表示是否启用Group不可用时自动移除 1=YES 0=NO-->
+    <!--group_retry_time 表示Group的重试时间，超过后将会自动移除-->
+    <!--eject_after_restore 表示摘除Group后，如果又变为可用状态，将会进行恢复 1=YES 0=NO-->
+
+    <group name="group1" hash_min="0" hash_max="19" policy="master_only">
+    <!--组名为 group1 哈希映射的范围为0~19 (包含0,19) 使用的策略为 master_only-->
+        <host host_name="host1" ip="172.30.12.12" port="6379" master="1" password="" connect_num="50"></host>
+        <host host_name="host1" ip="172.30.12.12" port="6380" master="0" password="" connect_num="50"></host>
+        <!--host_name 表示主机别名-->
+        <!--ip Redis服务器IP-->
+        <!--port Redis服务器端口-->
+        <!--master 是否主备 1:主 0:备-->
+        <!--password 表示redis服务器的验证密码-->
+	<!—connect_num 表示连接到redis服务器的连接池大小-->
+    </group>
+    <group name="group2" hash_min="20" hash_max="39">
+        <host host_name="host1" ip="172.30.12.12" port="6381" master="1"></host>
+    </group>
+    <group name="group3" hash_min="40" hash_max="59">
+        <host host_name="host1" ip="172.30.12.12" port="6382" master="1"></host>
+    </group>
+    <group name="group4" hash_min="60" hash_max="79">
+        <host host_name="host1" ip="172.30.12.12" port="6383" master="1"></host>
+    </group>
+
+    <!--配置HASH值到Group的映射关系-->
+    <hash_mapping>
+        <hash value="0" group_name="group1"></hash>
+        <hash value="1" group_name="group1"></hash>
+    </hash_mapping>
+    <!--配置指定KEY到Group的映射关系-->
+    <key_mapping>
+        <key key_name="key1" group_name="group1"></key>
+        <key key_name="key2" group_name="group2"></key>
+    </key_mapping>
 </onecache>
