@@ -26,8 +26,8 @@
 
     <group name="group1" hash_min="0" hash_max="19" policy="master_only">
     <!--组名为 group1 哈希映射的范围为0~19 (包含0,19) 使用的策略为 master_only-->
-        <host host_name="host1" ip="172.30.12.12" port="6379" master="1" password="" connect_num="50"></host>
-        <host host_name="host1" ip="172.30.12.12" port="6380" master="0" password="" connect_num="50"></host>
+        <host host_name="host1" ip="172.30.12.12" port="6379" master="1" password="" connection_num="50"></host>
+        <host host_name="host1" ip="172.30.12.12" port="6380" master="0" password="" connection_num="50"></host>
         <!--host_name 表示主机别名-->
         <!--ip Redis服务器IP-->
         <!--port Redis服务器端口-->
