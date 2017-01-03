@@ -33,7 +33,7 @@
         <!--port Redis服务器端口-->
         <!--master 是否主备 1:主 0:备-->
         <!--password 表示redis服务器的验证密码-->
-	<!--connect_num 表示连接到redis服务器的连接池大小-->
+	<!--connection_num 表示连接到redis服务器的连接池大小-->
     </group>
     <group name="group2" hash_min="20" hash_max="39">
         <host host_name="host1" ip="172.30.12.12" port="6381" master="1"></host>
